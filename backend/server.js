@@ -27,6 +27,7 @@ uploadDirs.forEach(dir => {
 });
 
 const app = express();
+app.set("trust proxy", 1);
 
 // ---- Security ----
 app.use(helmet({
@@ -35,17 +36,21 @@ app.use(helmet({
 }));
 
 // ---- CORS ----
-const allowedOrigins = [
-  process.env.FRONTEND_URL,
-  'http://localhost:5000',
-  'http://localhost:3000',
-  'http://127.0.0.1:5000',
-].filter(Boolean);
-
 app.use(cors({
-  origin: function(origin, callback) {
+  origin: function (origin, callback) {
     // Allow requests with no origin (mobile apps, curl, Postman)
-    if (!origin || allowedOrigins.includes(origin) || process.env.NODE_ENV === 'development') {
+    if (!origin || process.env.NODE_ENV === 'development') {
+      return callback(null, true);
+    }
+
+    const frontendUrl = process.env.FRONTEND_URL ? process.env.FRONTEND_URL.replace(/\/$/, '') : null;
+    const isAllowed =
+      (frontendUrl && origin.replace(/\/$/, '') === frontendUrl) ||
+      /^http:\/\/localhost:\d+$/.test(origin) ||
+      /^http:\/\/127\.0\.0\.1:\d+$/.test(origin) ||
+      /\.onrender\.com$/.test(origin);
+
+    if (isAllowed) {
       return callback(null, true);
     }
     callback(new Error('CORS: Origin not allowed'));
@@ -89,14 +94,14 @@ app.use(express.static(path.join(__dirname, '../frontend'), {
 }));
 
 // ---- API Routes ----
-app.use('/api/auth',          require('./routes/auth'));
-app.use('/api/users',         require('./routes/users'));
-app.use('/api/posts',         require('./routes/posts'));
-app.use('/api/comments',      require('./routes/comments'));
+app.use('/api/auth', require('./routes/auth'));
+app.use('/api/users', require('./routes/users'));
+app.use('/api/posts', require('./routes/posts'));
+app.use('/api/comments', require('./routes/comments'));
 app.use('/api/notifications', require('./routes/notifications'));
-app.use('/api/stories',       require('./routes/stories'));
-app.use('/api/search',        require('./routes/search'));
-app.use('/api/messages',      require('./routes/messages'));
+app.use('/api/stories', require('./routes/stories'));
+app.use('/api/search', require('./routes/search'));
+app.use('/api/messages', require('./routes/messages'));
 
 // ---- Health Check ----
 app.get('/api/health', (req, res) => {
@@ -124,7 +129,7 @@ app.use((err, req, res, next) => {
   if (process.env.NODE_ENV === 'development') console.error(err.stack);
 
   // Mongoose validation error
-  if (err.name === 'ValidationError') {
+  if (err.name === 'ValidationError' && err.errors) {
     const messages = Object.values(err.errors).map(e => e.message);
     return res.status(400).json({ success: false, message: messages[0], errors: messages });
   }
